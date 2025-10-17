@@ -30,11 +30,11 @@ Brief explanation of what the main scripts do.
 
 ## Project Structure
 ```
-├── web_scraping/		# web scraping scripts and dirty data
-├── data_cleaning/		# final data cleaning scripts producing model ready data
-├── recommender_component/      # pokemon recommender functionality scripts here
-├── supervised_component/       # modeling strength by appearance scripts here
-├── unsupervised_component/     # clustering pokemon features and interpretation scripts here 
+├── web_scraping/            # web scraping scripts and dirty data
+├── data_cleaning/           # final data cleaning scripts producing model ready data
+├── recommender_component/   # pokemon recommender functionality scripts here
+├── supervised_component/    # modeling strength by appearance scripts here
+├── unsupervised_component/  # clustering pokemon features and interpretation scripts here 
 └── README.md
 ```
 
