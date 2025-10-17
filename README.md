@@ -43,6 +43,3 @@ Brief explanation of what the main scripts do.
 
 Richard Paul Yim - (rpyim@unc.edu)
 
-## License
-
-MIT / Academic use only / etc.
