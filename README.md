@@ -1,15 +1,15 @@
 # CatchEmAll: Data Science of Pokemon
 
-This is supposed to a fun little data science project BIOS 611 at UNC-CH.
+This is supposed to a fun little data science project for BIOS 611 at UNC-CH.
 
 ## Overview
 
 This pokedex data on many base form pokemon (e.g., excluding mega evolutions). 
 
 This project accomplishes three things:
-1. Supervised learning - Are you as strong as you look? Regression analysis will be done modeling the pokemon stats by appearance only.
-2. Unsupervised learning - How are different pokemon related to each other on some lower dimensional manifold? We will use pokemon pokedex text entries, and pokemon stats to perform clustering.
-3. Pokemon recommendation - What other pokemon might you like? Based on one pokemon, there will be a recommendation system to suggest new pokemon weighed by appearance, text entry descriptions, and base stats.
+1. **Supervised learning** - Are you as strong as you look? Regression analysis will be done modeling the pokemon stats by appearance only.
+2. **Unsupervised learning** - How are different pokemon related to each other on some lower dimensional manifold? We will use pokemon pokedex text entries, and pokemon stats to perform clustering.
+3. **Pokemon recommendation** - What other pokemon might you like? Based on one pokemon, there will be a recommendation system to suggest new pokemon weighed by appearance, text entry descriptions, and base stats.
 
 ## Data
 

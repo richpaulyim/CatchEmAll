@@ -1,0 +1,247 @@
+---
+title: "Pokemon Spectral Clustering Report"
+author: "Analysis Report"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 8)
+```
+
+# Pokemon Clustering Analysis
+
+This report presents the results of spectral clustering analysis on Pokemon data, combining statistics, text embeddings, and image features.
+
+## Load Required Libraries
+
+```{r libraries}
+library(tidyverse)
+library(plotly)
+```
+
+## Load Data
+
+```{r load-data}
+# Load clustering results
+clustering_results <- read_csv("q1_clustering/output/spectral_clustering_results.csv")
+
+# Load spectral embedding (20D space where clustering was performed)
+spectral_embedding <- readRDS("q1_clustering/output/spectral_embedding.rds")
+
+cat(sprintf("Loaded %d Pokemon with cluster assignments\n", nrow(clustering_results)))
+cat(sprintf("Loaded spectral embedding: %d Pokemon x %d dimensions\n",
+            nrow(spectral_embedding), ncol(spectral_embedding)))
+```
+
+## Extract Visualization Dimensions from Spectral Embedding
+
+```{r spectral-dims}
+# Use first three spectral eigenvectors for 3D visualization
+# These are the most informative dimensions from the graph Laplacian
+spectral_data_3d <- as_tibble(spectral_embedding[, 1:3]) %>%
+  rename(Dim1 = 1, Dim2 = 2, Dim3 = 3) %>%
+  mutate(name = rownames(spectral_embedding))
+
+cat("Using first 3 dimensions of spectral embedding for 3D visualization\n")
+cat("These correspond to the smallest non-zero eigenvalues of the graph Laplacian\n")
+```
+
+## Merge with Cluster Assignments
+
+```{r merge-clusters}
+# Merge spectral embedding with cluster assignments
+plot_data <- spectral_data_3d %>%
+  left_join(clustering_results, by = "name") %>%
+  mutate(cluster = factor(cluster))
+
+cat(sprintf("Created plot data with %d Pokemon\n", nrow(plot_data)))
+cat(sprintf("Number of clusters: %d\n", n_distinct(plot_data$cluster)))
+```
+
+## Cluster Size Summary
+
+```{r cluster-summary}
+cluster_summary <- plot_data %>%
+  count(cluster) %>%
+  arrange(desc(n))
+
+knitr::kable(cluster_summary,
+             col.names = c("Cluster", "Number of Pokemon"),
+             caption = "Cluster Sizes")
+```
+
+## Interactive 3D Spectral Clustering Visualization
+
+```{r plotly-viz, fig.width=14, fig.height=10}
+# Define high-contrast color palette for 18 clusters
+high_contrast_colors <- c(
+  "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
+  "#911eb4", "#46f0f0", "#f032e6", "#bcf60c", "#fabebe",
+  "#008080", "#e6beff", "#9a6324", "#fffac8", "#800000",
+  "#aaffc3", "#808000", "#ffd8b1"
+)
+
+# Create interactive 3D plotly plot
+p <- plot_ly(
+  data = plot_data,
+  x = ~Dim1,
+  y = ~Dim2,
+  z = ~Dim3,
+  color = ~cluster,
+  colors = high_contrast_colors,
+  text = ~name,
+  type = "scatter3d",
+  mode = "markers",
+  marker = list(
+    size = 4,
+    sizemode = 'diameter',
+    opacity = 0.85,
+    line = list(
+      color = "rgba(0, 0, 0, 0.8)",
+      width = 1
+    )
+  ),
+  hovertemplate = paste(
+    "<b>%{text}</b><br>",
+    "Cluster: %{marker.color}<br>",
+    "Dim 1: %{x:.3f}<br>",
+    "Dim 2: %{y:.3f}<br>",
+    "Dim 3: %{z:.3f}<br>",
+    "<extra></extra>"
+  )
+) %>%
+  layout(
+    title = list(
+      text = "Pokemon Spectral Clustering - 3D Visualization in Spectral Embedding Space (k=18)<br><sub>First 3 eigenvectors from normalized graph Laplacian</sub>",
+      font = list(size = 16)
+    ),
+    scene = list(
+      xaxis = list(
+        title = "Spectral Dim 1 (2nd smallest eigenvalue)",
+        gridcolor = "#E5E5E5",
+        showbackground = TRUE,
+        backgroundcolor = "#F8F8F8"
+      ),
+      yaxis = list(
+        title = "Spectral Dim 2 (3rd smallest eigenvalue)",
+        gridcolor = "#E5E5E5",
+        showbackground = TRUE,
+        backgroundcolor = "#F8F8F8"
+      ),
+      zaxis = list(
+        title = "Spectral Dim 3 (4th smallest eigenvalue)",
+        gridcolor = "#E5E5E5",
+        showbackground = TRUE,
+        backgroundcolor = "#F8F8F8"
+      ),
+      camera = list(
+        eye = list(x = 1.5, y = 1.5, z = 1.3)
+      )
+    ),
+    paper_bgcolor = "white",
+    legend = list(
+      title = list(text = "Cluster"),
+      orientation = "v",
+      x = 1.02,
+      y = 1
+    )
+  )
+
+p
+```
+
+## Cluster Interpretation
+
+```{r cluster-details}
+# Sample Pokemon from each cluster
+set.seed(42)
+cluster_samples <- plot_data %>%
+  group_by(cluster) %>%
+  slice_sample(n = 5) %>%
+  ungroup() %>%
+  select(cluster, name, Dim1, Dim2, Dim3) %>%
+  arrange(cluster, name)
+
+knitr::kable(cluster_samples,
+             col.names = c("Cluster", "Pokemon", "Dim 1", "Dim 2", "Dim 3"),
+             caption = "Sample Pokemon from Each Cluster (up to 5 per cluster)",
+             digits = 3)
+```
+
+## Summary Statistics
+
+```{r summary-stats}
+summary_stats <- plot_data %>%
+  group_by(cluster) %>%
+  summarise(
+    n = n(),
+    mean_Dim1 = mean(Dim1),
+    mean_Dim2 = mean(Dim2),
+    mean_Dim3 = mean(Dim3),
+    sd_Dim1 = sd(Dim1),
+    sd_Dim2 = sd(Dim2),
+    sd_Dim3 = sd(Dim3),
+    .groups = "drop"
+  ) %>%
+  arrange(cluster)
+
+knitr::kable(summary_stats,
+             col.names = c("Cluster", "Size", "Mean D1", "Mean D2", "Mean D3", "SD D1", "SD D2", "SD D3"),
+             caption = "Cluster Statistics in 3D Spectral Embedding Space",
+             digits = 3)
+```
+
+## Methodology
+
+### Data Sources
+- **Pokemon Statistics**: Base stats, types, abilities, etc.
+- **Text Embeddings**: SVD of Pokemon descriptions
+- **Image Features**: PCA of Pokemon sprite images
+
+### Clustering Pipeline
+1. **Feature Integration**: Combined 2,730 features from stats, text, and images
+2. **Distance Metric**: Mahalanobis distance with shrinkage covariance
+3. **Affinity Matrix**: RBF kernel with σ = 0.5 × median distance
+4. **Spectral Embedding**: 20 eigenvectors from normalized graph Laplacian
+5. **K-means Clustering**: 18 clusters based on Calinski-Harabasz index
+6. **Visualization**: First 3 dimensions of spectral embedding (shown above)
+
+### Visualization Details
+The **interactive 3D plot** shows Pokemon in the **spectral embedding space** - the actual space where k-means clustering was performed. The three dimensions correspond to:
+- **Dim 1**: 2nd smallest eigenvalue of graph Laplacian (1st is trivial ~0)
+- **Dim 2**: 3rd smallest eigenvalue of graph Laplacian
+- **Dim 3**: 4th smallest eigenvalue of graph Laplacian
+
+**Interactive features:**
+- **Rotate**: Click and drag to rotate the view
+- **Zoom**: Scroll wheel or pinch to zoom in/out
+- **Pan**: Right-click and drag (or shift+drag)
+- **Hover**: Mouse over points to see Pokemon details
+- **Filter**: Click legend items to show/hide clusters
+- **Reset**: Double-click to reset view
+
+**Note:** Marker sizes in 3D plotly plots are fixed in screen pixels and don't scale with zoom. For best viewing:
+- Zoom in to see detail in dense cluster regions
+- Hide clusters via legend to reduce visual clutter
+- Rotate to find angles that separate overlapping clusters
+
+This 3D spectral visualization is superior to PCA because:
+- Spectral embedding preserves graph structure and cluster separation
+- K-means was performed in this 20D space, so 3D projection is more representative
+- Captures manifold structure better than linear PCA
+- Additional dimension provides better cluster separation visibility
+
+### Results
+- **Total Pokemon**: `r nrow(plot_data)`
+- **Number of Clusters**: `r n_distinct(plot_data$cluster)`
+- **Between/Total Variance**: 55.66% (k-means on 20D spectral embedding)
+
+---
+
+*Report generated on `r Sys.time()`*
