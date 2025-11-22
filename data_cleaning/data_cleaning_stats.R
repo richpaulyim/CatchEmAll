@@ -4,8 +4,8 @@ library(purrr)
 library(stringr)
 
 # read in metadata and dirty data
-metadata <- read_csv("web_scraping/scraped_data/pokemon_metadata.csv")
-dirty_data <- read_csv("web_scraping/scraped_data/pokemon_stats.csv") %>% 
+metadata <- read_csv("data_scraping/scraped_data/pokemon_metadata.csv")
+dirty_data <- read_csv("data_scraping/scraped_data/pokemon_stats.csv") %>% 
   rename(url_name=pokedex_names) %>% 
   left_join(
     metadata %>% select(name,url_name), 

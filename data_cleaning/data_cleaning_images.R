@@ -3,7 +3,7 @@ library(ggplot2)
 library(stringr)
 
 # Get all PNG files from the pokemon_images directory
-image_files <- list.files("web_scraping/pokemon_images",
+image_files <- list.files("data_scraping/pokemon_images",
                          pattern = "\\.png$",
                          full.names = TRUE)
 

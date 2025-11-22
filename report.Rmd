@@ -5,237 +5,214 @@ date: "`r Sys.Date()`"
 output:
   html_document:
     toc: true
-    toc_float: true
-    theme: cosmo
-    code_folding: hide
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    theme: united
 ---
 
+```{r libraries, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(plotly)
+library(Rtsne)
+```
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 8)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 8)
 ```
 
 # Pokemon Clustering Analysis
 
-This report presents the results of spectral clustering analysis on Pokemon data, combining statistics, text embeddings, and image features.
+One pokemon is a dragon, and another is a motorcycle; one pokemon is a radio, and another is a rock (see Figure 1). There are hundreds of pokemon, and while we can characterize families of pokemon by species, element type, and more, maybe we can characterize them jointly across all these features. This is exactly what this analysis accomplishes!
 
-## Load Required Libraries
+This report discovers a new way to characterize pokemon based on their base stats, pokedex descriptions, and official illustrations.
 
-```{r libraries}
-library(tidyverse)
-library(plotly)
+
+```{r fig.width=8, fig.height=5, fig.cap="Charizard, a dragon pokemon (left). Cyclizar, a motorcycle pokemon (right)", fig.show='hold', out.width='49%', fig.align='center'}
+knitr::include_graphics("web_screenshots/charizard.png")
+knitr::include_graphics("web_screenshots/cyclizar.png")
 ```
 
-## Load Data
+## Data Collection and Cleaning
 
-```{r load-data}
-# Load clustering results
-clustering_results <- read_csv("q1_clustering/output/spectral_clustering_results.csv")
+All data are pulled from "https://pokemondb.net/pokedex/all" (see Figure 2). Only standard variations of pokemon are scraped for simplicity. For example, Mega Charizard is excluded and we only include the standard "Charizard" variant. In our final analysis we successfully scrape data on 985 pokemon.
 
-# Load spectral embedding (20D space where clustering was performed)
-spectral_embedding <- readRDS("q1_clustering/output/spectral_embedding.rds")
-
-cat(sprintf("Loaded %d Pokemon with cluster assignments\n", nrow(clustering_results)))
-cat(sprintf("Loaded spectral embedding: %d Pokemon x %d dimensions\n",
-            nrow(spectral_embedding), ncol(spectral_embedding)))
+```{r fig.width=8, fig.height=5, fig.cap="Charizard, a dragon pokemon (left). Cyclizar, a motorcycle pokemon (right)", fig.show='hold', out.width='49%', fig.align='center'}
+knitr::include_graphics("web_screenshots/databaseImages.png")
 ```
 
-## Extract Visualization Dimensions from Spectral Embedding
+For each of these pokemon on the database master list, we follow each link and pull three categories of data: pokemon stats (base defense and attack stats; their weight, height; species type; elemental defense and offense); text descriptions from various pokemon games; image data corresponding to the official pokemon illustration given at a fixed angle and posed. Figure 3 shows what the each page looks like for a given pokemon, in this case Bulbasaur.
 
-```{r spectral-dims}
-# Use first three spectral eigenvectors for 3D visualization
-# These are the most informative dimensions from the graph Laplacian
-spectral_data_3d <- as_tibble(spectral_embedding[, 1:3]) %>%
-  rename(Dim1 = 1, Dim2 = 2, Dim3 = 3) %>%
-  mutate(name = rownames(spectral_embedding))
-
-cat("Using first 3 dimensions of spectral embedding for 3D visualization\n")
-cat("These correspond to the smallest non-zero eigenvalues of the graph Laplacian\n")
+```{r fig.width=8, fig.height=5, fig.cap="All the data of a single pokemon contained on this page. The text data is scraped from the beginning part of each webpage. Image data is obviously collected for the corresponding image as shown. All other pokemon stats are collected under type defenses, base stats, and breeding (training is not included for simplicity).", fig.show='hold', out.width='49%', fig.align='center'}
+knitr::include_graphics("web_screenshots/bulbasaur.png")
 ```
 
-## Merge with Cluster Assignments
+In the next three subsections, we provide a high-level overview of the data cleaning process for each of the three categories of data.
 
-```{r merge-clusters}
-# Merge spectral embedding with cluster assignments
-plot_data <- spectral_data_3d %>%
-  left_join(clustering_results, by = "name") %>%
-  mutate(cluster = factor(cluster))
+### Pokemon Stats
 
-cat(sprintf("Created plot data with %d Pokemon\n", nrow(plot_data)))
-cat(sprintf("Number of clusters: %d\n", n_distinct(plot_data$cluster)))
+Pokemon stats data includes base statistics (HP, Attack, Defense, Special Attack, Special Defense, Speed), types (Fire, Water, Grass, etc.), abilities, egg groups, gender ratios, and physical attributes like height and weight. This categorical and numerical data is one-hot encoded to create binary features for each category. For example, a Fire/Flying type Pokemon like Charizard gets indicator variables for both `Type_Fire` and `Type_Flying`. Similarly, abilities and egg groups are expanded into binary features. Physical measurements (height and weight) are extracted from their text representations and converted to numeric values. This preprocessing results in approximately 37 clean numerical features that capture a Pokemon's battle capabilities and biological characteristics.
+
+### Text Descriptions
+
+Text descriptions from Pokedex entries provide rich semantic information about each Pokemon's characteristics, behavior, and lore across different games. To compress this high-dimensional text data into a usable numeric representation, we apply **Singular Value Decomposition (SVD)** after creating a TF-IDF (Term Frequency-Inverse Document Frequency) matrix.
+
+**Why SVD for text?** SVD is ideal for text data because it identifies latent semantic topics in the corpus. The TF-IDF matrix captures which words are important for each Pokemon, but the raw vocabulary space is extremely sparse (thousands of unique words). SVD decomposes this matrix into orthogonal components that represent underlying "themes" in the text data—such as descriptions of legendary Pokemon, aquatic Pokemon, or evolutionary characteristics. By keeping only the top singular vectors, we retain the most important semantic information while dramatically reducing dimensionality. This creates a dense, low-dimensional representation where Pokemon with similar descriptions cluster together in semantic space.
+
+### Official Illustrations
+
+Pokemon sprite images provide visual information about appearance, color, shape, and design patterns. Each image is flattened into a high-dimensional pixel vector, but this raw representation is inefficient and noisy. We apply **Principal Component Analysis (PCA)** to compress the image data.
+
+**Why PCA for images?** PCA is well-suited for image data because it identifies the directions of maximum variance in pixel space. The first few principal components capture the most important visual variations—such as overall shape, dominant colors, and size—while filtering out noise and redundant information from correlated pixels. Unlike SVD which finds semantic topics, PCA finds geometric patterns in the visual space. The result is a compact representation where Pokemon with similar appearances (e.g., all bird-like Pokemon or all serpentine Pokemon) have similar PCA coordinates. This dimensionality reduction makes subsequent distance calculations computationally tractable while preserving the essential visual features that distinguish Pokemon.
+
+### Final Clean Data
+
+Combining all types of features together, inner joining on all the pokemon names, we have 948 pokemon and 2731 features (including pokemon name).
+
+```{r tsne-full-plot, fig.width=7, fig.height=4}
+knitr::include_graphics("data_cleaning/clean_data/tsne_clean_data.png")
 ```
 
-## Cluster Size Summary
 
-```{r cluster-summary}
-cluster_summary <- plot_data %>%
-  count(cluster) %>%
-  arrange(desc(n))
+## Spectral Embedding Analysis
 
-knitr::kable(cluster_summary,
-             col.names = c("Cluster", "Number of Pokemon"),
-             caption = "Cluster Sizes")
+With 2,730 heterogeneous features combining stats, text embeddings, and image components, we need a sophisticated approach to measure Pokemon similarity. We employ spectral clustering, which discovers clusters by analyzing the eigenvectors of a graph Laplacian derived from pairwise similarities.
+
+### Distance Metric: Mahalanobis Distance with Shrinkage Covariance
+
+Rather than using standard Euclidean distance, we compute **Mahalanobis distance** with shrinkage covariance estimation. This is crucial when combining features with vastly different scales and correlations.
+
+**What is Mahalanobis distance?** Unlike Euclidean distance which treats all features equally, Mahalanobis distance accounts for the covariance structure of the data—it "stretches" space along directions of low variance and "shrinks" it along high variance directions. This prevents features with large numeric ranges (like some image PCA components) from dominating the distance calculation over categorical features (like type indicators). The formula is: d(x,y) = √[(x-y)ᵀ Σ⁻¹ (x-y)] where Σ⁻¹ is the inverse covariance matrix.
+
+**Why shrinkage?** With p=2,730 features and n=948 samples, we face a critical challenge: the sample covariance matrix is ill-conditioned and not full rank (you need at least as many samples as features for a well-conditioned covariance matrix). Computing the inverse of such a matrix is numerically unstable and can lead to wildly inaccurate distance estimates.
+
+**How shrinkage helps:** The **Ledoit-Wolf shrinkage estimator** (via `corpcor::invcov.shrink`) regularizes the covariance matrix by blending it with a diagonal target matrix. Specifically, it computes: Σ_shrunk = (1-λ)Σ_sample + λI, where λ is the shrinkage intensity (automatically tuned) and I is the identity matrix. This ensures the inverse exists and is stable, while still preserving the essential correlation structure in the data. The shrinkage "pulls" the covariance matrix toward a diagonal form just enough to make inversion reliable without losing too much information about feature relationships.
+
+### Kernel Selection: Radial Basis Function (RBF)
+
+The Mahalanobis distance matrix is transformed into an affinity (similarity) matrix using the **RBF (Gaussian) kernel**: affinity = exp(-distance² / 2σ²). This kernel has several advantages:
+
+- **Smooth transitions**: The exponential function creates smooth, continuous similarities rather than hard cutoffs
+- **Local emphasis**: Nearby Pokemon have high affinity; distant Pokemon have near-zero affinity
+- **Graph structure**: The resulting affinity matrix forms a weighted graph where edges represent Pokemon similarities
+
+### Choosing Sigma (σ)
+
+The bandwidth parameter σ controls how rapidly affinity decays with distance. Too small, and the graph becomes disconnected; too large, and all Pokemon appear equally similar. We chose **σ = 0.5 × median Mahalanobis distance** because this value produces the **widest width and range in the affinity distribution** (see right panel below). This maximizes the discriminative power of the affinity matrix—we get a rich spectrum of similarities from near-zero (very different Pokemon) to near-one (very similar Pokemon), rather than all affinities clustering around the same value. The distribution plots below show how our choice of σ creates well-separated affinity values that effectively distinguish different levels of Pokemon similarity.
+
+```{r embedding-family, fig.width=4, fig.height=5, fig.cap="", fig.show='hold', out.width='49%', fig.align='center'}
+knitr::include_graphics("data_clustering/clustering_results/distance_distribution.png")
+knitr::include_graphics("data_clustering/clustering_results/affinity_distributions.png")
 ```
 
-## Interactive 3D Spectral Clustering Visualization
+### Graph Laplacian and Spectral Embedding
 
-```{r plotly-viz, fig.width=14, fig.height=10}
-# Define high-contrast color palette for 18 clusters
-high_contrast_colors <- c(
-  "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
-  "#911eb4", "#46f0f0", "#f032e6", "#bcf60c", "#fabebe",
-  "#008080", "#e6beff", "#9a6324", "#fffac8", "#800000",
-  "#aaffc3", "#808000", "#ffd8b1"
-)
+From the affinity matrix, we construct the **normalized graph Laplacian** and compute its eigenvectors. But how many eigenvectors should we use for the embedding? This is determined via **spectral gap analysis**.
 
-# Create interactive 3D plotly plot
-p <- plot_ly(
-  data = plot_data,
-  x = ~Dim1,
-  y = ~Dim2,
-  z = ~Dim3,
-  color = ~cluster,
-  colors = high_contrast_colors,
-  text = ~name,
-  type = "scatter3d",
-  mode = "markers",
-  marker = list(
-    size = 4,
-    sizemode = 'diameter',
-    opacity = 0.85,
-    line = list(
-      color = "rgba(0, 0, 0, 0.8)",
-      width = 1
-    )
-  ),
-  hovertemplate = paste(
-    "<b>%{text}</b><br>",
-    "Cluster: %{marker.color}<br>",
-    "Dim 1: %{x:.3f}<br>",
-    "Dim 2: %{y:.3f}<br>",
-    "Dim 3: %{z:.3f}<br>",
-    "<extra></extra>"
-  )
-) %>%
-  layout(
-    title = list(
-      text = "Pokemon Spectral Clustering - 3D Visualization in Spectral Embedding Space (k=18)<br><sub>First 3 eigenvectors from normalized graph Laplacian</sub>",
-      font = list(size = 16)
-    ),
-    scene = list(
-      xaxis = list(
-        title = "Spectral Dim 1 (2nd smallest eigenvalue)",
-        gridcolor = "#E5E5E5",
-        showbackground = TRUE,
-        backgroundcolor = "#F8F8F8"
-      ),
-      yaxis = list(
-        title = "Spectral Dim 2 (3rd smallest eigenvalue)",
-        gridcolor = "#E5E5E5",
-        showbackground = TRUE,
-        backgroundcolor = "#F8F8F8"
-      ),
-      zaxis = list(
-        title = "Spectral Dim 3 (4th smallest eigenvalue)",
-        gridcolor = "#E5E5E5",
-        showbackground = TRUE,
-        backgroundcolor = "#F8F8F8"
-      ),
-      camera = list(
-        eye = list(x = 1.5, y = 1.5, z = 1.3)
-      )
-    ),
-    paper_bgcolor = "white",
-    legend = list(
-      title = list(text = "Cluster"),
-      orientation = "v",
-      x = 1.02,
-      y = 1
-    )
-  )
+**The Spectral Gap Method:**
 
+The eigenvalues of the graph Laplacian encode information about cluster structure. Small eigenvalues (near zero) correspond to eigenvectors that reveal cluster boundaries, while larger eigenvalues correspond to noise or within-cluster variation. The key insight: there is often a large "gap" in the eigenvalue spectrum marking the transition from cluster-informative eigenvectors to noise.
+
+We analyze this by:
+
+1. **Computing all eigenvalues** of the normalized Laplacian (in ascending order, excluding the trivial λ≈0)
+2. **Finding gaps**: Compute Δλᵢ = λᵢ₊₁ - λᵢ for consecutive eigenvalues
+3. **Selecting dimensionality**: Choose the position of the largest gap as the embedding dimension
+
+**Why this works:** The spectral gap represents a phase transition in the graph structure. Eigenvectors before the gap capture meaningful cluster separations; eigenvectors after the gap represent high-frequency noise. By cutting at the largest gap, we automatically determine the "intrinsic dimensionality" of the cluster structure.
+
+**Alternative criteria we also compute:**
+
+- **Variance threshold**: Use enough eigenvectors to capture 95% or 99% of total variance (similar to PCA)
+- **k + log(k) heuristic**: A common rule-of-thumb suggesting using slightly more eigenvectors than clusters
+- **Maximum gap**: Our chosen method, which is data-driven and requires no hyperparameter tuning
+
+The spectral gap method is optimal because it adapts to the actual cluster structure in your data rather than imposing an arbitrary cutoff. The selected eigenvectors "unfold" the nonlinear manifold into a space where Euclidean distance (used by k-means) becomes meaningful.
+
+## Cluster Count Analysis
+
+Determining the optimal number of clusters is a critical decision in unsupervised learning. We evaluate four standard methods to assess different values of k (number of clusters) and observe striking differences in their recommendations.
+
+### Elbow Method and Gap Statistic
+
+<div style="display: flex; justify-content: space-around;">
+```{r elbow-plot, echo=FALSE, out.width='48%'}
+knitr::include_graphics("data_clustering/clustering_results/elbow_method_plot.png")
+```
+```{r gap-plot, echo=FALSE, out.width='48%'}
+knitr::include_graphics("data_clustering/clustering_results/gap_statistic_plot.png")
+```
+</div>
+
+**Elbow Method** plots the within-cluster sum of squares (WCSS) as a function of k. The idea is to find the "elbow" where adding more clusters provides diminishing returns. However, for our Pokemon data, the curve decreases smoothly without a clear elbow—the reduction in WCSS is nearly linear from k=2 to k=20, making it difficult to identify a single optimal value. This suggests that our spectral embedding is relatively uniform without obvious natural breakpoints.
+
+**Gap Statistic** compares the WCSS of our clustering to that of random data. It suggests k=5 as optimal (where the gap is maximized), but this seems too coarse given the diversity of Pokemon. The gap statistic can be overly conservative when data has complex manifold structure, as it assumes clusters are well-separated and roughly spherical. Our spectral embedding captures more nuanced similarity relationships that don't fit these assumptions.
+
+**Why these methods were not useful:** Both the elbow method and gap statistic failed to provide actionable guidance. The elbow method showed no clear inflection point, and the gap statistic suggested k=5, which would group very disparate Pokemon together (e.g., lumping legendary dragons with tiny bug Pokemon). These methods are better suited for data with clear, well-separated clusters rather than the continuous manifold structure we observe in Pokemon feature space.
+
+### Calinski-Harabasz Index and Silhouette Analysis
+
+<div style="display: flex; justify-content: space-around;">
+```{r good-elbow-1, echo=FALSE, out.width='48%'}
+knitr::include_graphics("data_clustering/clustering_results/calinski_harabasz_plot.png")
+```
+```{r good-elbow-2, echo=FALSE, out.width='48%'}
+knitr::include_graphics("data_clustering/clustering_results/silhouette_plot.png")
+```
+</div>
+
+**Calinski-Harabasz Index** measures the ratio of between-cluster variance to within-cluster variance. Higher values indicate better-defined clusters. The plot shows a clear peak at **k=18**, indicating this value maximizes cluster separation while maintaining internal cohesion.
+
+**Silhouette Analysis** measures how similar each Pokemon is to its own cluster compared to other clusters. Values range from -1 (misclassified) to +1 (well-clustered). While the maximum average silhouette occurs at k=2 (a trivial split between "normal" and "outlier" Pokemon), we observe a secondary local maximum around **k=18** (marked with the dashed line). This agreement between two independent metrics provides strong evidence for k=18.
+
+**Choosing k=18:** The convergence of Calinski-Harabasz (which peaked at k=18) and Silhouette analysis (which showed stability at k=18) gives us confidence in this choice. With 18 clusters and 948 Pokemon, we achieve an average cluster size of ~53 Pokemon—large enough to capture meaningful patterns but small enough to maintain within-cluster similarity. This granularity aligns with domain knowledge: Pokemon naturally fall into numerous archetypal groups (aquatic, avian, legendary, dragon-like, humanoid, etc.), and k=18 provides sufficient resolution to distinguish these patterns without over-fragmenting the data.
+
+## Final Clusters
+
+The interactive 3D plot below shows the final clustering results, providing an intuitive visualization of how Pokemon group together based on their combined features.
+
+```{r bad-elbows, echo=FALSE, results='show', message=FALSE, fig.height=6, fig.width=8.5, warning=FALSE, fig.align="center"}
+source("data_modeling/tsne_visualization.R")
 p
 ```
 
-## Cluster Interpretation
+### Understanding the 3D Visualization
 
-```{r cluster-details}
-# Sample Pokemon from each cluster
-set.seed(42)
-cluster_samples <- plot_data %>%
-  group_by(cluster) %>%
-  slice_sample(n = 5) %>%
-  ungroup() %>%
-  select(cluster, name, Dim1, Dim2, Dim3) %>%
-  arrange(cluster, name)
+This **interactive 3D plot** uses **t-SNE (t-Distributed Stochastic Neighbor Embedding)** to project the **full 947-dimensional spectral embedding** into 3D space for visualization. Each point represents one Pokemon, colored by its cluster assignment from k-means clustering.
 
-knitr::kable(cluster_samples,
-             col.names = c("Cluster", "Pokemon", "Dim 1", "Dim 2", "Dim 3"),
-             caption = "Sample Pokemon from Each Cluster (up to 5 per cluster)",
-             digits = 3)
-```
+**Why t-SNE for visualization?**
 
-## Summary Statistics
+t-SNE excels at revealing cluster structure because it preserves local neighborhood relationships while arranging dissimilar points far apart. Unlike linear methods (PCA), t-SNE is a non-linear dimensionality reduction technique that:
 
-```{r summary-stats}
-summary_stats <- plot_data %>%
-  group_by(cluster) %>%
-  summarise(
-    n = n(),
-    mean_Dim1 = mean(Dim1),
-    mean_Dim2 = mean(Dim2),
-    mean_Dim3 = mean(Dim3),
-    sd_Dim1 = sd(Dim1),
-    sd_Dim2 = sd(Dim2),
-    sd_Dim3 = sd(Dim3),
-    .groups = "drop"
-  ) %>%
-  arrange(cluster)
+- **Preserves manifold structure**: Pokemon that are close in the 947D spectral space remain close in 3D
+- **Emphasizes clusters**: Tight groups in 3D indicate Pokemon with genuinely similar multimodal features
+- **Reveals boundaries**: Gaps between clusters show natural divisions in Pokemon characteristics
+- **Handles non-linearity**: Captures curved, non-convex cluster shapes that linear projections would miss
 
-knitr::kable(summary_stats,
-             col.names = c("Cluster", "Size", "Mean D1", "Mean D2", "Mean D3", "SD D1", "SD D2", "SD D3"),
-             caption = "Cluster Statistics in 3D Spectral Embedding Space",
-             digits = 3)
-```
+**Interactive Features:**
 
-## Methodology
+- **Hover over any Pokemon** to see its name, cluster assignment, and the top 10 most important features (by XGBoost gain) that distinguish its cluster from others
+- **Rotate the plot** to explore cluster structure from different angles
+- **Zoom in/out** to examine specific clusters or view the global structure
+- **Click legend items** to highlight or hide specific clusters
 
-### Data Sources
-- **Pokemon Statistics**: Base stats, types, abilities, etc.
-- **Text Embeddings**: SVD of Pokemon descriptions
-- **Image Features**: PCA of Pokemon sprite images
+**Interpretation:**
 
-### Clustering Pipeline
-1. **Feature Integration**: Combined 2,730 features from stats, text, and images
-2. **Distance Metric**: Mahalanobis distance with shrinkage covariance
-3. **Affinity Matrix**: RBF kernel with σ = 0.5 × median distance
-4. **Spectral Embedding**: 20 eigenvectors from normalized graph Laplacian
-5. **K-means Clustering**: 18 clusters based on Calinski-Harabasz index
-6. **Visualization**: First 3 dimensions of spectral embedding (shown above)
+- **Proximity**: Pokemon close together share similar stats, Pokedex descriptions, and visual appearance
+- **Cluster coherence**: Tight, well-separated clusters (like legendary Pokemon or specific type groups) indicate strong multimodal similarity
+- **Overlap regions**: Some Pokemon lie between clusters, reflecting hybrid characteristics (e.g., dual-type Pokemon bridging elemental categories)
+- **Feature importance**: The hover text reveals which features (stats, text topics, or visual components) most strongly define each cluster, providing interpretable insights into what makes each group distinct
 
-### Visualization Details
-The **interactive 3D plot** shows Pokemon in the **spectral embedding space** - the actual space where k-means clustering was performed. The three dimensions correspond to:
-- **Dim 1**: 2nd smallest eigenvalue of graph Laplacian (1st is trivial ~0)
-- **Dim 2**: 3rd smallest eigenvalue of graph Laplacian
-- **Dim 3**: 4th smallest eigenvalue of graph Laplacian
+### Clustering Pipeline Summary
 
-**Interactive features:**
-- **Rotate**: Click and drag to rotate the view
-- **Zoom**: Scroll wheel or pinch to zoom in/out
-- **Pan**: Right-click and drag (or shift+drag)
-- **Hover**: Mouse over points to see Pokemon details
-- **Filter**: Click legend items to show/hide clusters
-- **Reset**: Double-click to reset view
-
-**Note:** Marker sizes in 3D plotly plots are fixed in screen pixels and don't scale with zoom. For best viewing:
-- Zoom in to see detail in dense cluster regions
-- Hide clusters via legend to reduce visual clutter
-- Rotate to find angles that separate overlapping clusters
-
-This 3D spectral visualization is superior to PCA because:
-- Spectral embedding preserves graph structure and cluster separation
-- K-means was performed in this 20D space, so 3D projection is more representative
-- Captures manifold structure better than linear PCA
-- Additional dimension provides better cluster separation visibility
+1. **Data Collection**: Web scraping of 985 Pokemon (stats, text, images)
+2. **Feature Engineering**: One-hot encoding (stats), SVD (text), PCA (images) → 2,730 features
+3. **Distance Computation**: Mahalanobis distance with shrinkage covariance
+4. **Affinity Matrix**: RBF kernel with σ = 0.5 × median distance
+5. **Spectral Embedding**: All 947 non-trivial eigenvectors from normalized graph Laplacian (full spectral space)
+6. **K-means Clustering**: 18 clusters in 947D spectral space (chosen via Calinski-Harabasz and Silhouette)
+7. **Visualization**: t-SNE projection from 947D to 3D for interpretable exploration
+8. **Feature Importance**: XGBoost binary classifiers identify defining features per cluster
 
 ### Results
 - **Total Pokemon**: `r nrow(plot_data)`
