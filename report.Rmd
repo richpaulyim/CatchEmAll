@@ -178,13 +178,13 @@ p
 
 ### Understanding the 3D Visualization
 
-This **interactive 3D plot** uses **t-SNE (t-Distributed Stochastic Neighbor Embedding)** to project the **full 947-dimensional spectral embedding** into 3D space for visualization. Each point represents one Pokemon, colored by its cluster assignment from k-means clustering.
+This **interactive 3D plot** uses **t-SNE (t-Distributed Stochastic Neighbor Embedding)** to project the **21-dimensional spectral embedding** into 3D space for visualization. Each point represents one Pokemon, colored by its cluster assignment from k-means clustering.
 
 **Why t-SNE for visualization?**
 
 t-SNE excels at revealing cluster structure because it preserves local neighborhood relationships while arranging dissimilar points far apart. Unlike linear methods (PCA), t-SNE is a non-linear dimensionality reduction technique that:
 
-- **Preserves manifold structure**: Pokemon that are close in the 947D spectral space remain close in 3D
+- **Preserves manifold structure**: Pokemon that are close in the 21D spectral space remain close in 3D
 - **Emphasizes clusters**: Tight groups in 3D indicate Pokemon with genuinely similar multimodal features
 - **Reveals boundaries**: Gaps between clusters show natural divisions in Pokemon characteristics
 - **Handles non-linearity**: Captures curved, non-convex cluster shapes that linear projections would miss
@@ -209,15 +209,72 @@ t-SNE excels at revealing cluster structure because it preserves local neighborh
 2. **Feature Engineering**: One-hot encoding (stats), SVD (text), PCA (images) → 2,730 features
 3. **Distance Computation**: Mahalanobis distance with shrinkage covariance
 4. **Affinity Matrix**: RBF kernel with σ = 0.5 × median distance
-5. **Spectral Embedding**: All 947 non-trivial eigenvectors from normalized graph Laplacian (full spectral space)
-6. **K-means Clustering**: 18 clusters in 947D spectral space (chosen via Calinski-Harabasz and Silhouette)
-7. **Visualization**: t-SNE projection from 947D to 3D for interpretable exploration
+5. **Spectral Embedding**: 21 eigenvectors selected via spectral gap analysis + k+log(k) heuristic
+6. **K-means Clustering**: 18 clusters in 21D spectral space (chosen via Calinski-Harabasz and Silhouette)
+7. **Visualization**: t-SNE projection from 21D to 3D for interpretable exploration
 8. **Feature Importance**: XGBoost binary classifiers identify defining features per cluster
 
 ### Results
 - **Total Pokemon**: `r nrow(plot_data)`
 - **Number of Clusters**: `r n_distinct(plot_data$cluster)`
-- **Between/Total Variance**: 55.66% (k-means on 20D spectral embedding)
+- **Between/Total Variance**: 53.35% (k-means on 21D spectral embedding)
+
+## Discussion: Interpreting Clusters Through Feature Importance
+
+Understanding what each cluster represents requires examining the features that most strongly distinguish it from other clusters. XGBoost binary classifiers (each cluster vs. all others) reveal which features have the highest **gain**—a measure of how much a feature improves the model's ability to separate that cluster from the rest. High gain indicates that a feature is both informative and frequently used in decision splits.
+
+We examine the three largest clusters as case studies:
+
+### Cluster 12: Ground/Electric/Fire Types (118 Pokemon)
+
+**Representative Pokemon**: Ampharos, Arcanine, Blaziken, Camerupt, Boltund, Arbok, Bellibolt
+
+**Top Distinguishing Features**:
+1. **type_ground** (gain: 0.233) - Strong association with Ground-type weaknesses
+2. **pType_Electric** (0.121) - Primary Electric typing
+3. **pType_Fire** (0.103) - Primary Fire typing
+4. **type_normal** (0.075) - Weakness or resistance to Normal moves
+5. **type_poison** (0.057) - Poison-type defensive characteristics
+
+**Interpretation**: This cluster captures Pokemon with strong elemental affinities, particularly Electric and Fire primary types. The high importance of `type_ground` (a defensive stat indicating Ground-type weakness) suggests these Pokemon share common vulnerabilities—Electric types are weak to Ground, and Fire types often appear alongside Ground-type moves in battle contexts. The diversity of primary types (Electric, Fire, Poison) within a single cluster indicates that **defensive type matchups** and **battle role similarity** may be more important than primary typing alone for grouping Pokemon. These are likely offensive-oriented Pokemon that share similar stat distributions (moderate-to-high Attack/Special Attack) and comparable weaknesses.
+
+### Cluster 14: Water-Type Pokemon (104 Pokemon)
+
+**Representative Pokemon**: Blastoise, Alomomola, Barraskewda, Barbaracle, Buizel, Brionne
+
+**Top Distinguishing Features**:
+1. **pType_Water** (gain: 0.592) - Overwhelmingly dominant feature
+2. **type_grass** (0.086) - Grass-type defensive characteristics (Water is weak to Grass)
+3. **type_electricity** (0.039) - Electric-type defensive characteristics (Water is weak to Electric)
+4. **weight_kg** (0.014) - Physical size/weight
+5. **SVD_61** (0.016), **PC442** (0.014) - Text and visual features
+
+**Interpretation**: This is the most **homogeneous cluster** by type, with Water-type Pokemon forming a natural grouping. The feature importance is dominated by `pType_Water` (59.2% gain), indicating that primary Water typing is the single most important distinguisher. Secondary features like `type_grass` and `type_electricity` reflect shared weaknesses—Water Pokemon universally fear Grass and Electric attacks. Interestingly, `weight_kg` appears as a distinguishing feature, suggesting this cluster may capture aquatic Pokemon with similar body structures (streamlined, medium weight). The presence of text (SVD) and image (PC) features hints that Pokedex descriptions and visual appearance also contribute—likely capturing aquatic/marine themes in both text ("ocean," "water," "swim") and visual design (blues, fins, streamlined shapes).
+
+### Cluster 13: Normal-Type and Support Pokemon (83 Pokemon)
+
+**Representative Pokemon**: Arceus, Blissey, Audino, Bouffalant, Bibarel, Bidoof, Ambipom
+
+**Top Distinguishing Features**:
+1. **pType_Normal** (gain: 0.338) - Primary Normal typing
+2. **type_ghost** (0.306) - Ghost-type defensive characteristics (Normal is immune to Ghost)
+3. **type_bug** (0.112) - Bug-type interactions
+4. **eggGroup_Field** (0.063) - Breeding compatibility group
+5. **type_ground** (0.032), **type_ice** (0.024) - Various defensive stats
+
+**Interpretation**: This cluster is defined by **Normal-type Pokemon**, but with an interesting twist: the second-most important feature is `type_ghost` (30.6% gain), which represents *immunity* to Ghost-type moves—a defining characteristic of Normal types. The high importance of `eggGroup_Field` suggests this cluster captures Pokemon with similar breeding compatibility, often indicating shared evolutionary origins or ecological niches (Field group includes mammals and land-dwelling creatures). The presence of **Arceus** (the "God" Pokemon) and **Blissey** (the ultimate support/tank) indicates this cluster may represent **versatile, bulky Pokemon** with broad utility rather than specialized offensive roles. The lower importance of individual stat features (like base_defense) compared to type features suggests that these Pokemon are grouped more by their **type identity** and **battle role** than by raw stats.
+
+### Key Insights from Feature Importance
+
+1. **Type dominates clustering**: Primary types (`pType_*`) and defensive type matchups (`type_*`) are consistently the highest-gain features, suggesting that Pokemon's elemental identity is the strongest signal in the multimodal data.
+
+2. **Defensive characteristics matter**: Features like `type_ground`, `type_grass`, and `type_ghost` (representing weaknesses, resistances, or immunities) are often more important than offensive stats, indicating that **how Pokemon defend** is as important as how they attack.
+
+3. **Egg groups reveal ecological similarity**: The appearance of `eggGroup_Field` in Cluster 13 suggests that breeding compatibility (which reflects evolutionary and ecological relationships) contributes to clustering even when not explicitly emphasized in the analysis.
+
+4. **Multimodal features add nuance**: Text features (SVD components) and image features (PC components) appear in the top 10 for Cluster 14, indicating that Pokedex descriptions and visual design provide additional clustering signal beyond pure stats—especially for thematically coherent groups like Water types.
+
+5. **Cluster size correlates with type ubiquity**: The largest clusters (12, 14, 13) correspond to common type combinations (Electric/Fire/Ground, Water, Normal), suggesting that Pokemon design follows archetypal patterns with certain elemental identities being more prevalent.
 
 ---
 
