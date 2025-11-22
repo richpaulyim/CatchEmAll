@@ -1,5 +1,7 @@
 # CatchEmAll: Pokemon Data Science
 
+(Full report is `report.html`---this will be built from scratch using `make rebuild`.)
+
 Unsupervised machine learning analysis of Pokemon using spectral clustering on multimodal data (stats, Pokedex text, sprite images). Built for BIOS 611 at UNC-CH.
 
 ## Project Overview
@@ -13,7 +15,6 @@ This project discovers natural groupings of 948 Pokemon by combining three data 
 **Key methods:**
 - Mahalanobis distance with shrinkage covariance (handles 2,730 heterogeneous features)
 - RBF kernel + graph Laplacian for spectral embedding
-- Intelligent dimensionality selection via spectral gap analysis + k+log(k) heuristic (21D embedding)
 - K-means clustering (k=18) selected via Calinski-Harabasz + Silhouette analysis
 - XGBoost for interpretable feature importance per cluster
 - Interactive 3D t-SNE visualization
