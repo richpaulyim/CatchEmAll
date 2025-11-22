@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make:*)",
+      "Bash(Rscript:*)",
+      "Bash(awk:*)",
+      "Bash(tree:*)",
+      "Bash(test:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(for pokemon in diglett mewtwo ho-oh)",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(tee:*)",
+      "Bash(git checkout:*)",
+      "Bash(testfile.txt)",
+      "Bash(printf:*)",
+      "Bash(Makefile)",
+      "Bash(/home/rstudio/work/Makefile)",
+      "Bash(git log:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
